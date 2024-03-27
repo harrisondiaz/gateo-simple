@@ -1,13 +1,21 @@
-const express = require('express');
+const express = require("express");
 const app = express();
-const port = process.env.PORT||3000;
+const port = process.env.PORT || 3000;
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require('mongodb');
-
-const Product = require('./models/product');
-const uri = "mongodb+srv://harrisondiaz:Meliodassama01@products.og4vryj.mongodb.net/?retryWrites=true&w=majority&appName=products";
+const { MongoClient, ServerApiVersion } = require("mongodb");
+const bcrypt = require("bcrypt");
+const Product = require("./models/product");
+const uri =
+  "mongodb+srv://harrisondiaz:Meliodassama01@products.og4vryj.mongodb.net/?retryWrites=true&w=majority&appName=products";
 app.use(express.json());
 app.use(cors("*"));
+
+const jwt = require("jsonwebtoken");
+
+const secretKey =
+  "rEaC0fU8v1wBfHLg60B0ZEyWq7z4h8aeboxcdYuexIZv/Annu8E6CGjtj7B+2QtzTwAM9xup6S1dO94yHEh+0g==";
+
+const expiresIn = 3600;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -15,57 +23,131 @@ const client = new MongoClient(uri, {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
+  },
+});
+
+async function run() {
+  try {
+    // Connect the client to the server (optional starting in v4.7)
+    await client.connect();
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
+
+    const usersCollection = client.db("login").collection("users");
+
+    const saltRounds = 10;
+    const plainTextPassword = "aquiles01";
+    const hashedPassword = await bcrypt.hash(plainTextPassword, saltRounds);
+
+    // Check if the pre-defined user already exists (optional)
+    const existingUser = await usersCollection.findOne({
+      email: "harryjhoi01@gmail.com",
+    });
+
+    if (!existingUser) {
+      await usersCollection.insertOne({
+        email: "harryjhoi01@gmail.com",
+        password: hashedPassword,
+      });
+      console.log("Pre-defined user created successfully!");
+    } else {
+      console.log("Pre-defined user already exists.");
+    }
+  } finally {
+    await client.close();
+  }
+}
+
+run().catch(console.dir);
+
+app.post("/api/login", async (req, res) => {
+  
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: "Falta el email o contraseña" });
+  }
+
+  try {
+    await client.connect();
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
+    const usersCollection = client.db("login").collection("users");
+    const user = await usersCollection.findOne({ email });
+
+    if (!user) {
+      return res.status(401).json({ message: "Email o contraseña invalidos" });
+    }
+
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    if (!passwordMatch) {
+      return res.status(401).json({ message: "Email o contraseña invalidos" });
+    }
+
+    const payload = {
+      username: user.email,
+      role: "admin",
+    };
+
+    const token = jwt.sign(payload, secretKey, { expiresIn });
+
+    res.json({ message: "Login successful!", token: token }); // Replace with actual JWT
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
-  async function connectToDatabase() {
-    try {
-        await client.connect();
-        console.log("Connected to MongoDB");
-    } catch (err) {
-        console.error(err);
-    }
-}
-
-connectToDatabase();
-
-app.get('/products', async (req, res) => {
-    try {
-        const database = client.db("pasitos_traviesos"); 
-        const collection = database.collection("product"); 
-        const products = await collection.find().toArray();
-        res.json(products);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
+app.get("/products", async (req, res) => {
+  try {
+    await client.connect();
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
+    const database = client.db("pasitos_traviesos");
+    const collection = database.collection("product");
+    const products = await collection.find().toArray();
+    res.json(products);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
-app.post('/products', async (req, res) => {
-    const productData = req.body;
+
+app.post("/products", async (req, res) => {
+  const productData = req.body;
+  const product = new Product(productData);
+  try {
+    await client.connect();
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
+    const database = client.db("pasitos_traviesos");
+    const collection = database.collection("product");
+    const lastProduct = await collection
+      .find()
+      .sort({ productID: -1 })
+      .limit(1)
+      .toArray();
+    let nextProductID = 1;
+    if (lastProduct.length > 0) {
+      nextProductID = lastProduct[0].productID + 1;
+    }
+    productData.productID = nextProductID;
     const product = new Product(productData);
-    try {
-        const database = client.db("pasitos_traviesos"); 
-        const collection = database.collection("product"); 
-        const lastProduct = await collection.find().sort({ productID: -1 }).limit(1).toArray();
-        let nextProductID = 1;
-        if (lastProduct.length > 0) {
-            nextProductID = lastProduct[0].productID + 1;
-        }
-        productData.productID = nextProductID;
-        const product = new Product(productData);
-        const result = await collection.insertOne(product.toJson());
-        res.status(201).json("Product created successfully");
-    } catch (err) {
-        res.status(400).json({ message: err.message });
-    }
+    const result = await collection.insertOne(product.toJson());
+    res.status(201).json("Product created successfully");
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
 });
 
-app.get('/api/hello', (req, res) => {
-    res.json({ message: '¡Hola, mundo!' });
+app.get("/api/hello", (req, res) => {
+  res.json({ message: "¡Hola, mundo!" });
 });
-
-
 
 app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`)
-})
+  console.log(`Example app listening on port ${port}`);
+});
