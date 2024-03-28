@@ -37,17 +37,18 @@ async function run() {
     const usersCollection = client.db("login").collection("users");
 
     const saltRounds = 10;
-    const plainTextPassword = "aquiles01";
+    const plainTextPassword = "empleado123";
     const hashedPassword = await bcrypt.hash(plainTextPassword, saltRounds);
 
     // Check if the pre-defined user already exists (optional)
     const existingUser = await usersCollection.findOne({
-      email: "harryjhoi01@gmail.com",
+      email: "empleado@empleado.com",
     });
 
     if (!existingUser) {
       await usersCollection.insertOne({
-        email: "harryjhoi01@gmail.com",
+        name: "Empleado 🌟",
+        email: "empleado@empleado.com",
         password: hashedPassword,
       });
       console.log("Pre-defined user created successfully!");
@@ -60,6 +61,29 @@ async function run() {
 }
 
 run().catch(console.dir);
+
+app.get("/api/users/:email", async (req, res) => {
+  const email = req.params.email;
+
+  try {
+    await client.connect();
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
+    const usersCollection = client.db("login").collection("users");
+    const user = await usersCollection.findOne({ email }, { projection: { _id: 0, email: 1, name: 1 } });
+
+    if (!user) {
+      return res.status(404).json({ message: "Usuario no encontrado" });
+    }
+
+    res.json(user);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 
 app.post("/api/login", async (req, res) => {
   
@@ -78,12 +102,12 @@ app.post("/api/login", async (req, res) => {
     const user = await usersCollection.findOne({ email });
 
     if (!user) {
-      return res.status(401).json({ message: "Email o contraseña invalidos" });
+      return res.status(200).json({ message: "Email o contraseña invalidos" });
     }
 
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) {
-      return res.status(401).json({ message: "Email o contraseña invalidos" });
+      return res.status(200).json({ message: "Email o contraseña invalidos" });
     }
 
     const payload = {
