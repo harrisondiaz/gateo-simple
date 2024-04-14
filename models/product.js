@@ -16,6 +16,8 @@ class Product {
         supplier,
         homePrice,
         photos,
+        description,
+        type,
     }) {
         this.productID = productID || 0;
         this.reference = reference || '';
@@ -30,6 +32,8 @@ class Product {
         this.supplier = supplier || '';
         this.homePrice = homePrice ? new HomePrice(homePrice) : {};
         this.photos = Array.isArray(photos) ? photos.map(photoJson => Photo.fromJson(photoJson)) : [];
+        this.description = description || '';
+        this.type = type || '';
     }
 
     static fromJson(json) {
@@ -47,6 +51,8 @@ class Product {
             supplier: json.supplier,
             homePrice: json.homePrice || {},
             photos: json.photos || [],
+            description: json.description,
+            type: json.type,
         });
     }
 
@@ -65,6 +71,8 @@ class Product {
             supplier: this.supplier,
             homePrice: this.homePrice ? this.homePrice.toJson() : {},
             photos: this.photos.map(photo => photo.toJson()),
+            description: this.description,
+            type: this.type,
         };
     }
 }
