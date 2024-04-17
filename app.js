@@ -124,6 +124,26 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
+app.get('/api/products', async (req, res) => {
+    try {
+        await client.connect();
+        const productsCollection = client.db("pasitos_traviesos").collection("product");
+        const products = await productsCollection.find().toArray();
+
+        const response = products.map(product => ({
+            reference: product.reference,
+            productName: product.productName,
+            homePrice: product.homePrice.value,
+            photos: product.photos,
+            description: product.description
+        }));
+
+        res.json(response);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 app.get("/products", async (req, res) => {
   try {
     await client.connect();
