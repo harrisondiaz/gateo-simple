@@ -174,6 +174,22 @@ app.get("/providers", async (req, res) => {
   }
 });
 
+app.post("/providers", async (req, res) => {
+  const providerData = req.body;
+  try {
+    await client.connect();
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
+    const database = client.db("pasitos_traviesos");
+    const collection = database.collection("provider");
+    const result = await collection.insertOne(providerData);
+    res.status(201).json("Provider created successfully");
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
 
 app.post("/products", async (req, res) => {
   const productData = req.body;
