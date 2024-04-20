@@ -159,6 +159,21 @@ app.get("/products", async (req, res) => {
   }
 });
 
+app.get("/providers", async (req, res) => {
+  try {
+    await client.connect();
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
+    const database = client.db("pasitos_traviesos");
+    const collection = database.collection("provider");
+    const providers = await collection.find().toArray();
+    res.json(providers);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 
 app.post("/products", async (req, res) => {
   const productData = req.body;
