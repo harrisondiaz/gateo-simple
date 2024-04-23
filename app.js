@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 const port = process.env.PORT || 3000;
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion,ObjectId  } = require("mongodb");
 const bcrypt = require("bcrypt");
 const Product = require("./models/product");
 const uri =
@@ -218,6 +218,27 @@ app.post("/products", async (req, res) => {
     res.status(400).json({ message: err.message });
   }
 });
+
+//Borrar el primer proveedor por el _id
+app.delete("/providers/:id", async (req, res) => {
+  const id = req.params.id;
+  try {
+    await client.connect();
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
+    const database = client.db("pasitos_traviesos");
+    const collection = database.collection("provider");
+    const result = await collection.deleteOne({ "_id": new ObjectId(id) });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: "Proveedor no encontrado" });
+    }
+    res.json("Proveedor eliminado exitosamente");
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 
 app.get("/api/hello", (req, res) => {
   res.json({ message: "¡Hola, mundo!" });
