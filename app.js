@@ -1,249 +1,359 @@
+require("dotenv").config();
 const express = require("express");
 const app = express();
 const port = process.env.PORT || 3000;
 const cors = require("cors");
-const { MongoClient, ServerApiVersion,ObjectId  } = require("mongodb");
-const bcrypt = require("bcrypt");
-const Product = require("./models/product");
-const uri =
-  "mongodb+srv://harrisondiaz:Meliodassama01@products.og4vryj.mongodb.net/?retryWrites=true&w=majority&appName=products";
+const { Pool } = require("pg");
+const PDFDocument = require("pdfkit");
+const PDFTable = require("pdfkit-table");
 app.use(express.json());
 app.use(cors("*"));
 
-const jwt = require("jsonwebtoken");
-
-const secretKey =
-  "rEaC0fU8v1wBfHLg60B0ZEyWq7z4h8aeboxcdYuexIZv/Annu8E6CGjtj7B+2QtzTwAM9xup6S1dO94yHEh+0g==";
-
-const expiresIn = 3600;
-
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
-const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  },
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
 });
 
-async function run() {
+app.get("/", (req, res) => {
+  res.send("Hello World!");
+});
+
+/**
+ *  Para revisar la conección a la base de datos
+ **/
+app.get("/ping", async (req, res) => {
   try {
-    // Connect the client to the server (optional starting in v4.7)
-    await client.connect();
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
-
-    const usersCollection = client.db("login").collection("users");
-
-    const saltRounds = 10;
-    const plainTextPassword = "empleado123";
-    const hashedPassword = await bcrypt.hash(plainTextPassword, saltRounds);
-
-    // Check if the pre-defined user already exists (optional)
-    const existingUser = await usersCollection.findOne({
-      email: "empleado@empleado.com",
-    });
-
-    if (!existingUser) {
-      await usersCollection.insertOne({
-        name: "Empleado 🌟",
-        email: "empleado@empleado.com",
-        password: hashedPassword,
-      });
-      console.log("Pre-defined user created successfully!");
-    } else {
-      console.log("Pre-defined user already exists.");
-    }
-  } finally {
-    await client.close();
-  }
-}
-
-run().catch(console.dir);
-
-app.get("/api/users/:email", async (req, res) => {
-  const email = req.params.email;
-
-  try {
-    await client.connect();
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
-    const usersCollection = client.db("login").collection("users");
-    const user = await usersCollection.findOne({ email }, { projection: { _id: 0, email: 1, name: 1 } });
-
-    if (!user) {
-      return res.status(404).json({ message: "Usuario no encontrado" });
-    }
-
-    res.json(user);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Internal server error" });
+    const client = await pool.connect();
+    const result = await client.query("SELECT 1");
+    res.send("Database connection successful");
+    client.release();
+  } catch (error) {
+    console.log();
+    res.status(500).send("Database connection failed");
   }
 });
 
-
-app.post("/api/login", async (req, res) => {
-  
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ message: "Falta el email o contraseña" });
-  }
-
-  try {
-    await client.connect();
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
-    const usersCollection = client.db("login").collection("users");
-    const user = await usersCollection.findOne({ email });
-
-    if (!user) {
-      return res.status(200).json({ message: "Email o contraseña invalidos" });
-    }
-
-    const passwordMatch = await bcrypt.compare(password, user.password);
-    if (!passwordMatch) {
-      return res.status(200).json({ message: "Email o contraseña invalidos" });
-    }
-
-    const payload = {
-      username: user.email,
-      role: "admin",
-    };
-
-    const token = jwt.sign(payload, secretKey, { expiresIn });
-
-    res.json({ message: "Login successful!", token: token }); // Replace with actual JWT
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
-
-app.get('/api/products', async (req, res) => {
-    try {
-        await client.connect();
-        const productsCollection = client.db("pasitos_traviesos").collection("product");
-        const products = await productsCollection.find().toArray();
-
-        const response = products.map(product => ({
-            reference: product.reference,
-            productName: product.productName,
-            homePrice: product.homePrice.value,
-            photos: product.photos,
-            description: product.description
-        }));
-
-        res.json(response);
-    } catch (error) {
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
+// Get all products
+// Get all products with the specified format
+// Get all products with photos
 app.get("/products", async (req, res) => {
   try {
-    await client.connect();
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
-    const database = client.db("pasitos_traviesos");
-    const collection = database.collection("product");
-    const products = await collection.find().toArray();
-    res.json(products);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+    const client = await pool.connect();
+    const result = await client.query(`
+    SELECT
+    p.id AS "_id",
+    p.classification,
+    p.costWithVAT,
+    p.costWithoutVAT,
+    p.description,
+    json_build_object('value', p.homePriceValue, 'utilityPercentage', p.homePriceUtilityPercentage, 'utilityValue', p.homePriceUtilityValue) AS homePrice,
+    (
+        SELECT json_agg(json_build_object('color', pp.color, 'url', pp.url))
+        FROM PhotoProduct pp
+        WHERE pp.productoID = p.id
+    ) AS photos,
+    p.id AS "productID",
+    p.productName,
+    p.quantity,
+    p.reference,
+    p.stock,
+    '' AS supplier,
+    p.totalCost,
+    p.type,
+    p.vat
+FROM
+    Product p;
+
+    `);
+    console.log(result.rows);
+    res.json(result.rows);
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
+// Get all products with the specified format
+app.get("/products/format", async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query(`
+    SELECT
+    p.id AS "_id",
+    p.classification,
+    p.costWithVAT,
+    p.costWithoutVAT,
+    p.description,
+    json_build_object('value', p.homePriceValue, 'utilityPercentage', p.homePriceUtilityPercentage, 'utilityValue', p.homePriceUtilityValue) AS homePrice,
+    (
+        SELECT json_agg(json_build_object('color', pp.color, 'url', pp.url))
+        FROM PhotoProduct pp
+        WHERE pp.productoID = p.id
+    ) AS photos,
+    p.id AS "productID",
+    p.productName,
+    p.quantity,
+    p.reference,
+    p.stock,
+    '' AS supplier,
+    p.totalCost,
+    p.type,
+    p.vat
+FROM
+    Product p;
+    
+        `);
+    console.log(result.rows);
+    res.json(result.rows);
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get all providers
 app.get("/providers", async (req, res) => {
   try {
-    await client.connect();
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
-    const database = client.db("pasitos_traviesos");
-    const collection = database.collection("provider");
-    const providers = await collection.find().toArray();
-    res.json(providers);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+    const client = await pool.connect();
+    const result = await client.query("SELECT * FROM provider");
+    res.json(result.rows);
+    client.release();
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-app.post("/providers", async (req, res) => {
-  const providerData = req.body;
-  try {
-    await client.connect();
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
-    const database = client.db("pasitos_traviesos");
-    const collection = database.collection("provider");
-    const result = await collection.insertOne(providerData);
-    res.status(201).json("Provider created successfully");
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
-});
-
-
-app.post("/products", async (req, res) => {
-  const productData = req.body;
-  const product = new Product(productData);
-  try {
-    await client.connect();
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
-    const database = client.db("pasitos_traviesos");
-    const collection = database.collection("product");
-    const lastProduct = await collection
-      .find()
-      .sort({ productID: -1 })
-      .limit(1)
-      .toArray();
-    let nextProductID = 1;
-    if (lastProduct.length > 0) {
-      nextProductID = lastProduct[0].productID + 1;
-    }
-    productData.productID = nextProductID;
-    const product = new Product(productData);
-    const result = await collection.insertOne(product.toJson());
-    res.status(201).json("Product created successfully");
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
-});
-
-//Borrar el primer proveedor por el _id
-app.delete("/providers/:id", async (req, res) => {
+//
+app.get("/providers/:id", async (req, res) => {
   const id = req.params.id;
   try {
-    await client.connect();
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
-    const database = client.db("pasitos_traviesos");
-    const collection = database.collection("provider");
-    const result = await collection.deleteOne({ "_id": new ObjectId(id) });
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ message: "Proveedor no encontrado" });
-    }
-    res.json("Proveedor eliminado exitosamente");
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+    const client = await pool.connect();
+    const result = await client.query("SELECT * FROM provider WHERE id = $1", [
+      id,
+    ]);
+    res.json(result.rows);
+    client.release();
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-
-app.get("/api/hello", (req, res) => {
-  res.json({ message: "¡Hola, mundo!" });
+app.get("/provider/names", async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query("SELECT name FROM provider");
+    res.json(result.rows);
+    client.release();
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
+app.get("/products/:id", async (req, res) => {
+  const id = req.params.id;
+  try {
+    const client = await pool.connect();
+    const result = await client.query("SELECT * FROM product WHERE id = $1", [
+      id,
+    ]);
+    res.json(result.rows);
+    client.release();
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.put("/providers/:id", async (req, res) => {
+  const id = req.params.id;
+  const {
+    nature,
+    taxregime,
+    documenttype,
+    document,
+    verificationdigit,
+    firstname,
+    othernames,
+    lastname,
+    secondlastname,
+    businessname,
+    department,
+    city,
+    address,
+    neighborhood,
+    phone,
+    zone,
+    email,
+  } = req.body;
+  try {
+    const client = await pool.connect();
+    const result = await client.query(
+      "UPDATE provider SET nature = $1, taxRegime = $2, documentType = $3, document = $4, verificationDigit = $5, firstName = $6, otherNames = $7, lastName = $8, secondLastName = $9, businessName = $10, department = $11, city = $12, address = $13, neighborhood = $14, phone = $15, zone = $16, email = $17 WHERE id = $18 RETURNING *",
+      [
+        nature,
+        taxregime,
+        documenttype,
+        document,
+        verificationdigit,
+        firstname,
+        othernames,
+        lastname,
+        secondlastname,
+        businessname,
+        department,
+        city,
+        address,
+        neighborhood,
+        phone,
+        zone,
+        email,
+        id,
+      ]
+    );
+    if (result.rows.length === 0) {
+      res.status(404).json({ message: "Provider not found" });
+    } else {
+      res.json(result.rows[0]);
+    }
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.post("/pdf", async (req, res) => {
+  const providers = req.body;
+
+  res.status(200).set({
+    "Content-Type": "application/pdf",
+    "Content-Disposition": 'attachment; filename="providers.pdf"',
+  });
+  const doc = new PDFDocument({ layout: "portrait" }); // Set layout to landscape
+  doc.pipe(res); // Pipe the PDF output to the response
+
+  // List
+  const listItems = providers.map(
+    (provider) =>
+      `Naturaleza: ${provider.nature}\n` +
+      `Régimen Tributario: ${provider.taxRegime}\n` +
+      `Tipo de Documento: ${provider.documentType}\n` +
+      `Documento: ${provider.document}\n` +
+      `Dígito de Verificación: ${provider.verificationDigit}\n` +
+      `Primer Nombre: ${provider.firstName}\n` +
+      `Otros Nombres: ${provider.otherNames}\n` +
+      `Apellido: ${provider.lastName}\n` +
+      `Segundo Apellido: ${provider.secondLastName}\n` +
+      `Nombre de la Empresa: ${provider.businessName}\n` +
+      `Departamento: ${provider.department}\n` +
+      `Ciudad: ${provider.city}\n` +
+      `Dirección: ${provider.address}\n` +
+      `Barrio: ${provider.neighborhood}\n` +
+      `Teléfono: ${provider.phone}\n` +
+      `Zona: ${provider.zone}\n` +
+      `Correo Electrónico: ${provider.email}\n\n`
+  );
+
+  // Draw list
+  doc.text("Proveedores", {
+    underline: true,
+    width: 410,
+    align: "center",
+  });
+  doc.moveDown();
+  drawList(doc, listItems);
+
+  doc.end();
+});
+
+function drawList(doc, listItems) {
+  const { fontSize, startX, startY, bulletRadius } = {
+    fontSize: 10,
+    startX: 50,
+    startY: 50,
+    bulletRadius: 3,
+  };
+
+  doc.fontSize(fontSize);
+  doc.list(listItems, startX, startY, { bulletRadius, bulletIndent: 10 });
+}
+
+app.post("/providers", async (req, res) => {
+  const {
+    nature,
+    taxregime,
+    documenttype,
+    document,
+    verificationdigit,
+    firstname,
+    othernames,
+    lastname,
+    secondLastname,
+    businessname,
+    department,
+    city,
+    address,
+    neighborhood,
+    phone,
+    zone,
+    email,
+  } = req.body;
+  try {
+    const client = await pool.connect();
+    const result = await client.query(
+      "INSERT INTO provider (nature, taxRegime, documentType, document, verificationDigit, firstName, otherNames, lastName, secondLastName, businessName, department, city, address, neighborhood, phone, zone, email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *",
+      [
+        nature,
+        taxregime,
+        documenttype,
+        document,
+        verificationdigit,
+        firstname,
+        othernames,
+        lastname,
+        secondLastname,
+        businessname,
+        department,
+        city,
+        address,
+        neighborhood,
+        phone,
+        zone,
+        email,
+      ]
+    );
+    res.status(201).json(result.rows[0]);
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.delete("/providers/:id", async (req, res) => {
+    const id = req.params.id;
+    try {
+        const client = await pool.connect();
+        const result = await client.query("DELETE FROM provider WHERE id = $1", [
+        id,
+        ]);
+        if (result.rowCount === 0) {
+        res.status(404).json({ message: "Provider not found" });
+        } else {
+        res.status(204).json();
+        }
+        client.release();
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Server error" });
+    }
+    });
+
 app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`);
+  console.log(`Server running on port ${port}`);
 });
