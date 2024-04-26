@@ -336,23 +336,35 @@ app.post("/providers", async (req, res) => {
 });
 
 app.delete("/providers/:id", async (req, res) => {
-    const id = req.params.id;
-    try {
-        const client = await pool.connect();
-        const result = await client.query("DELETE FROM provider WHERE id = $1", [
-        id,
-        ]);
-        if (result.rowCount === 0) {
-        res.status(404).json({ message: "Provider not found" });
-        } else {
-        res.status(204).json();
-        }
-        client.release();
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Server error" });
+  const id = req.params.id;
+  try {
+    const client = await pool.connect();
+    const result = await client.query("DELETE FROM provider WHERE id = $1", [
+      id,
+    ]);
+    if (result.rowCount === 0) {
+      res.status(404).json({ message: "Provider not found" });
+    } else {
+      res.status(204).json();
     }
-    });
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.get("/api/client", async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query("SELECT * FROM client");
+    res.json(result.rows);
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
