@@ -3,12 +3,12 @@ const HomePrice = require('./homePrice');
 
 class Product {
     constructor({
-        productID,
+        id,
         reference,
-        productName,
+        productname,
         quantity,
-        costWithoutVAT,
-        costWithVAT,
+        costwithoutvat,
+        costwithvat,
         vat = 19,
         totalCost,
         stock,
@@ -19,38 +19,38 @@ class Product {
         description,
         type,
     }) {
-        this.productID = productID || 0;
+        this.id = id;
         this.reference = reference || '';
-        this.productName = productName || '';
+        this.productname = productname || '';
         this.quantity = quantity || 0;
-        this.costWithoutVAT = costWithoutVAT || 0;
-        this.costWithVAT = costWithVAT || 0;
-        this.vat = vat || 19;
+        this.costwithoutvat = costwithoutvat || 0;
+        this.costwithvat = costwithvat || 0;
+        this.vat = vat;
         this.totalCost = totalCost || 0;
         this.stock = stock || 0;
         this.classification = classification || '';
         this.supplier = supplier || '';
-        this.homePrice = homePrice ? new HomePrice(homePrice) : {};
-        this.photos = Array.isArray(photos) ? photos.map(photoJson => Photo.fromJson(photoJson)) : [];
+        this.homePrice = homePrice ? new HomePrice(homePrice) : null;
+        this.photos = photos.map(photo => new Photo(photo));
         this.description = description || '';
         this.type = type || '';
     }
 
     static fromJson(json) {
         return new Product({
-            productID: json.productID,
+            id: json.productID,
             reference: json.reference,
-            productName: json.productName,
+            productname: json.productName,
             quantity: json.quantity,
-            costWithoutVAT: json.costWithoutVAT,
-            costWithVAT: json.costWithVAT,
+            costwithoutvat: json.costWithoutVAT,
+            costwithvat: json.costWithVAT,
             vat: json.vat,
             totalCost: json.totalCost,
             stock: json.stock,
             classification: json.classification,
             supplier: json.supplier,
-            homePrice: json.homePrice || {},
-            photos: json.photos || [],
+            homePrice: json.homePrice,
+            photos: json.photos.map(photo => Photo.fromJson(photo)),
             description: json.description,
             type: json.type,
         });
@@ -58,18 +58,18 @@ class Product {
 
     toJson() {
         return {
-            productID: this.productID,
+            productID: this.id,
             reference: this.reference,
-            productName: this.productName,
+            productName: this.productname,
             quantity: this.quantity,
-            costWithoutVAT: this.costWithoutVAT,
-            costWithVAT: this.costWithVAT,
+            costWithoutVAT: this.costwithoutvat,
+            costWithVAT: this.costwithvat,
             vat: this.vat,
             totalCost: this.totalCost,
             stock: this.stock,
             classification: this.classification,
             supplier: this.supplier,
-            homePrice: this.homePrice ? this.homePrice.toJson() : {},
+            homePrice: this.homePrice ? this.homePrice.toJson() : null,
             photos: this.photos.map(photo => photo.toJson()),
             description: this.description,
             type: this.type,

@@ -44,31 +44,30 @@ app.get("/products", async (req, res) => {
     const client = await pool.connect();
     const result = await client.query(`
     SELECT
-    p.id AS "_id",
+    p.id,
     p.classification,
-    p.costWithVAT,
-    p.costWithoutVAT,
+    p.costwithvat,
+    p.costwithoutvat,
     p.description,
-    json_build_object('value', p.homePriceValue, 'utilityPercentage', p.homePriceUtilityPercentage, 'utilityValue', p.homePriceUtilityValue) AS homePrice,
+    json_build_object('value', p.homepricevalue, 'utilityPercentage', p.homepriceutilitypercentage, 'utilityValue', p.homepriceutilityvalue) AS homePrice,
     (
         SELECT json_agg(json_build_object('color', pp.color, 'url', pp.url))
         FROM PhotoProduct pp
-        WHERE pp.productoID = p.id
+        WHERE pp.productoid = p.id
     ) AS photos,
-    p.id AS "productID",
-    p.productName,
+    p.id AS "productid",
+    p.productname,
     p.quantity,
     p.reference,
     p.stock,
     '' AS supplier,
-    p.totalCost,
+    p.totalcost,
     p.type,
     p.vat
 FROM
     Product p;
 
     `);
-    console.log(result.rows);
     res.json(result.rows);
     client.release();
   } catch (error) {
@@ -107,7 +106,6 @@ FROM
     Product p;
     
         `);
-    console.log(result.rows);
     res.json(result.rows);
     client.release();
   } catch (error) {
@@ -147,13 +145,14 @@ app.get("/providers/:id", async (req, res) => {
 app.get("/provider/names", async (req, res) => {
   try {
     const client = await pool.connect();
-    const result = await client.query("SELECT name FROM provider");
+    const result = await client.query("SELECT businessname, id FROM provider");
     res.json(result.rows);
     client.release();
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 app.get("/products/:id", async (req, res) => {
   const id = req.params.id;
@@ -162,12 +161,24 @@ app.get("/products/:id", async (req, res) => {
     const result = await client.query("SELECT * FROM product WHERE id = $1", [
       id,
     ]);
-    res.json(result.rows);
+    const product = result.rows[0];
+
+    const photosResult = await client.query(
+      "SELECT color, url FROM photoproduct WHERE productoid = $1",
+      [id]
+    );
+    const photos = photosResult.rows;
+
+    product.photos = photos;
+    
+    res.json(product);
     client.release();
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+
 
 app.put("/providers/:id", async (req, res) => {
   const id = req.params.id;
@@ -262,13 +273,128 @@ app.post("/pdf", async (req, res) => {
   // Draw list
   doc.text("Proveedores", {
     underline: true,
-    width: 410,
     align: "center",
   });
   doc.moveDown();
   drawList(doc, listItems);
 
   doc.end();
+});
+
+app.post("/pdf/provider", async (req, res) => {
+  const provider = req.body;
+  res.status(200).set({
+    "Content-Type": "application/pdf",
+    "Content-Disposition": 'attachment; filename="providers.pdf"',
+  });
+  const doc = new PDFTable({ layout: "horizontal", size: "A3" });
+  doc.pipe(res);
+  const rows = provider.map((provider) => [
+    provider.nature,
+    provider.taxregime,
+    provider.documenttype,
+    provider.document,
+    provider.verificationdigit,
+    provider.firstname,
+    provider.othernames,
+    provider.lastname,
+    provider.secondlastname,
+    provider.businessname,
+    provider.department,
+    provider.city,
+    provider.address,
+    provider.neighborhood,
+    provider.phone,
+    provider.zone,
+    provider.email,
+  ]);
+  const table = {
+    title: "Proveedores",
+    subtitle: "Información de proveedores",
+    headers: [
+      "Naturaleza",
+      "Régimen Tributario",
+      "Tipo de Documento",
+      "Documento",
+      "Dígito de Verificación",
+      "Primer Nombre",
+      "Otros Nombres",
+      "Apellido",
+      "Segundo Apellido",
+      "Nombre de la Empresa",
+      "Departamento",
+      "Ciudad",
+      "Dirección",
+      "Barrio",
+      "Teléfono",
+      "Zona",
+      "Correo Electrónico",
+    ],
+    rows: rows,
+  };
+  doc.table(table);
+  doc.end();
+});
+
+app.post("/pdf/products", async (req, res) => {
+  try {
+    const products = req.body;
+
+    const rows = products.map((product) => [
+      product.productid,
+      product.classification,
+      product.costWithVAT,
+      product.costWithoutVAT,
+      product.description,
+      product.homePrice,
+      product.photos,
+      product.productName,
+      product.quantity,
+      product.reference,
+      product.stock,
+      product.supplier,
+      product.totalCost,
+      product.type,
+      product.vat,
+    ]);
+
+    res.status(200).set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": 'attachment; filename="products.pdf"',
+    });
+
+    const doc = new PDFTable({ layout: "landscape" });
+    doc.pipe(res);
+
+    const table = {
+      title: "Productos",
+      subtitle: "Información de productos",
+      headers: [
+        "ID",
+        "Clasificación",
+        "Costo con IVA",
+        "Costo sin IVA",
+        "Descripción",
+        "Precio de Venta",
+        "Fotos",
+        "Nombre",
+        "Cantidad",
+        "Referencia",
+        "Stock",
+        "Proveedor",
+        "Costo Total",
+        "Tipo",
+        "IVA",
+      ],
+      rows: rows,
+    };
+
+    doc.table(table);
+    doc.end();
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("An error occurred while generating the PDF.");
+  }
 });
 
 function drawList(doc, listItems) {

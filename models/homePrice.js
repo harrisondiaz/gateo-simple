@@ -1,8 +1,8 @@
 class HomePrice {
     constructor({ value, utilityPercentage, utilityValue }) {
         this.value = value;
-        this.utilityPercentage = utilityPercentage;
-        this.utilityValue = utilityValue;
+        this.utilityPercentage = utilitypercentage;
+        this.utilityValue = utilityvalue;
     }
 
     static fromJson(json) {
