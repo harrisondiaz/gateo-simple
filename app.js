@@ -492,6 +492,40 @@ app.get("/api/client", async (req, res) => {
   }
 });
 
+app.get("/api/products/:id/details", async (req, res) => {
+  const id = req.params.id;
+  try {
+    const client = await pool.connect();
+    const result = await client.query(
+      "SELECT p.homepricevalue, p.productname, p.description, p.classification, p.stock, pp.description as photoproduct_description FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid WHERE p.id = $1",
+      [id]
+    );
+    const data = result.rows[0];
+    
+    res.json(data);
+    client.release();
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.get("/api/products/details", async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query(
+      "SELECT p.homepricevalue, p.productname, p.description, p.classification, p.stock, pp.description as photoproduct_description FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid"
+    );
+    
+    const data = result.rows;
+    res.json(data);
+    client.release();
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+ 
+
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
