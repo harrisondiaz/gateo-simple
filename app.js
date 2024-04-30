@@ -497,7 +497,7 @@ app.get("/api/products/:id/details", async (req, res) => {
   try {
     const client = await pool.connect();
     const result = await client.query(
-      "SELECT p.homepricevalue, p.productname, p.description, p.classification, p.stock, pp.description as photoproduct_description FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid WHERE p.id = $1",
+      "SELECT p.homepricevalue, p.productname, p.description, p.classification, p.stock FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid WHERE p.id = $1",
       [id]
     );
     const data = result.rows[0];
@@ -513,13 +513,14 @@ app.get("/api/products/details", async (req, res) => {
   try {
     const client = await pool.connect();
     const result = await client.query(
-      "SELECT p.homepricevalue, p.productname, p.description, p.classification, p.stock, pp.description as photoproduct_description FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid"
+      "SELECT p.homepricevalue, p.productname, p.description, p.classification, p.stock FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid"
     );
     
     const data = result.rows;
     res.json(data);
     client.release();
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: "Server error" });
   }
 });
