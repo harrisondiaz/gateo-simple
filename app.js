@@ -509,18 +509,72 @@ app.get("/api/products/:id/details", async (req, res) => {
   }
 });
 
+app.get("/api/products/details/:id", async (req, res) => {
+  const id = req.params.id;
+  try {
+    const client = await pool.connect();
+    const result = await client.query(
+      "SELECT p.homepricevalue, p.productname, p.description as product_description, p.classification, p.stock, pp.color, pp.url as photo_url FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid WHERE p.id = $1",
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ message: "Product not found" });
+    } else {
+      const data = result.rows.reduce((acc, row) => {
+        const existingProduct = acc.find(p => p.productname === row.productname);
+        if (existingProduct) {
+          existingProduct.photos.push({ color: row.color, url: row.photo_url });
+        } else {
+          acc.push({
+            homepricevalue: row.homepricevalue,
+            productname: row.productname,
+            description: row.product_description,
+            classification: row.classification,
+            stock: row.stock,
+            photos: row.color ? [{ color: row.color, url: row.photo_url }] : []
+          });
+        }
+        return acc;
+      }, []);
+
+      res.json(data[0]); // Return the first (and only) element in the array
+    }
+
+    client.release();
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
 app.get("/api/products/details", async (req, res) => {
   try {
     const client = await pool.connect();
     const result = await client.query(
-      "SELECT p.homepricevalue, p.productname, p.description, p.classification, p.stock FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid"
+      "SELECT p.homepricevalue, p.productname, p.description as product_description, p.classification, p.stock, pp.color, pp.url as photo_url FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid"
     );
     
-    const data = result.rows;
+    const data = result.rows.reduce((acc, row) => {
+      const existingProduct = acc.find(p => p.productname === row.productname);
+      if (existingProduct) {
+        existingProduct.photos.push({ color: row.color, url: row.photo_url });
+      } else {
+        acc.push({
+          homepricevalue: row.homepricevalue,
+          productname: row.productname,
+          description: row.product_description,
+          classification: row.classification,
+          stock: row.stock,
+          photos: row.color ? [{ color: row.color, url: row.photo_url }] : []
+        });
+      }
+      return acc;
+    }, []);
+    
     res.json(data);
     client.release();
   } catch (error) {
-    console.error(error);
     res.status(500).json({ message: "Server error" });
   }
 });
