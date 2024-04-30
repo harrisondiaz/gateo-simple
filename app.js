@@ -514,30 +514,23 @@ app.get("/api/products/details/:id", async (req, res) => {
   try {
     const client = await pool.connect();
     const result = await client.query(
-      "SELECT p.homepricevalue, p.productname, p.description as product_description, p.classification, p.stock, pp.color, pp.url as photo_url FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid WHERE p.id = $1",
+      "SELECT p.id, p.reference, p.productname, p.stock, p.classification, json_build_object('value', p.homepricevalue) as homeprice, json_agg(json_build_object('color', pp.color, 'url', pp.url)) as photos, p.description FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid WHERE p.id = $1 GROUP BY p.id",
       [id]
     );
 
     if (result.rows.length === 0) {
       res.status(404).json({ message: "Product not found" });
     } else {
-      const data = result.rows.reduce((acc, row) => {
-        const existingProduct = acc.find(p => p.productname === row.productname);
-        if (existingProduct) {
-          existingProduct.photos.push({ color: row.color, url: row.photo_url });
-        } else {
-          acc.push({
-            homepricevalue: row.homepricevalue,
-            productname: row.productname,
-            description: row.product_description,
-            classification: row.classification,
-            stock: row.stock,
-            photos: row.color ? [{ color: row.color, url: row.photo_url }] : []
-          });
-        }
-        return acc;
-      }, []);
-
+      const data = result.rows.map(row => ({
+        id: row.id,
+        reference: row.reference,
+        productname: row.productname,
+        stock: row.stock,
+        classification: row.classification,
+        homeprice: row.homeprice,
+        photos: row.photos,
+        description: row.description
+      }));
       res.json(data[0]); // Return the first (and only) element in the array
     }
 
@@ -548,31 +541,26 @@ app.get("/api/products/details/:id", async (req, res) => {
 });
 
 
+
 app.get("/api/products/details", async (req, res) => {
   try {
     const client = await pool.connect();
     const result = await client.query(
-      "SELECT p.homepricevalue, p.productname, p.description as product_description, p.classification, p.stock, pp.color, pp.url as photo_url FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid"
+      "SELECT p.id, p.reference, p.productname, p.stock, p.classification, json_build_object('value', p.homepricevalue) as homeprice, json_agg(json_build_object('color', pp.color, 'url', pp.url)) as photos, p.description FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid GROUP BY p.id"
     );
-    
-    const data = result.rows.reduce((acc, row) => {
-      const existingProduct = acc.find(p => p.productname === row.productname);
-      if (existingProduct) {
-        existingProduct.photos.push({ color: row.color, url: row.photo_url });
-      } else {
-        acc.push({
-          homepricevalue: row.homepricevalue,
-          productname: row.productname,
-          description: row.product_description,
-          classification: row.classification,
-          stock: row.stock,
-          photos: row.color ? [{ color: row.color, url: row.photo_url }] : []
-        });
-      }
-      return acc;
-    }, []);
-    
+
+    const data = result.rows.map(row => ({
+      id: row.id,
+      reference: row.reference,
+      productname: row.productname,
+      stock: row.stock,
+      classification: row.classification,
+      homeprice: row.homeprice,
+      photos: row.photos,
+      description: row.description
+    }));
     res.json(data);
+
     client.release();
   } catch (error) {
     res.status(500).json({ message: "Server error" });
