@@ -6,8 +6,15 @@ const cors = require("cors");
 const { Pool } = require("pg");
 const PDFDocument = require("pdfkit");
 const PDFTable = require("pdfkit-table");
+const fs = require('fs');
+const crypto = require('crypto');
 app.use(express.json());
 app.use(cors("*"));
+
+
+const algorithm = 'aes-256-cbc';
+const secretKey = 'vOVH6sdmpNWjRRIqCc7rdxs01lwHzfr3';
+const iv = crypto.randomBytes(16);
 
 const pool = new Pool({
   host: process.env.DB_HOST,
@@ -153,7 +160,6 @@ app.get("/provider/names", async (req, res) => {
   }
 });
 
-
 app.get("/products/:id", async (req, res) => {
   const id = req.params.id;
   try {
@@ -170,15 +176,13 @@ app.get("/products/:id", async (req, res) => {
     const photos = photosResult.rows;
 
     product.photos = photos;
-    
+
     res.json(product);
     client.release();
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }
 });
-
-
 
 app.put("/providers/:id", async (req, res) => {
   const id = req.params.id;
@@ -501,7 +505,7 @@ app.get("/api/products/:id/details", async (req, res) => {
       [id]
     );
     const data = result.rows[0];
-    
+
     res.json(data);
     client.release();
   } catch (error) {
@@ -521,7 +525,7 @@ app.get("/api/products/details/:id", async (req, res) => {
     if (result.rows.length === 0) {
       res.status(404).json({ message: "Product not found" });
     } else {
-      const data = result.rows.map(row => ({
+      const data = result.rows.map((row) => ({
         id: row.id,
         reference: row.reference,
         productname: row.productname,
@@ -529,7 +533,7 @@ app.get("/api/products/details/:id", async (req, res) => {
         classification: row.classification,
         homeprice: row.homeprice,
         photos: row.photos,
-        description: row.description
+        description: row.description,
       }));
       res.json(data[0]); // Return the first (and only) element in the array
     }
@@ -540,8 +544,6 @@ app.get("/api/products/details/:id", async (req, res) => {
   }
 });
 
-
-
 app.get("/api/products/details", async (req, res) => {
   try {
     const client = await pool.connect();
@@ -549,7 +551,7 @@ app.get("/api/products/details", async (req, res) => {
       "SELECT p.id, p.reference, p.productname, p.stock, p.classification, json_build_object('value', p.homepricevalue) as homeprice, json_agg(json_build_object('color', pp.color, 'url', pp.url)) as photos, p.description FROM product p LEFT JOIN photoproduct pp ON p.id = pp.productoid GROUP BY p.id"
     );
 
-    const data = result.rows.map(row => ({
+    const data = result.rows.map((row) => ({
       id: row.id,
       reference: row.reference,
       productname: row.productname,
@@ -557,7 +559,7 @@ app.get("/api/products/details", async (req, res) => {
       classification: row.classification,
       homeprice: row.homeprice,
       photos: row.photos,
-      description: row.description
+      description: row.description,
     }));
     res.json(data);
 
@@ -567,7 +569,35 @@ app.get("/api/products/details", async (req, res) => {
   }
 });
 
- 
+const decrypt = (hash) => {
+    const parts = hash.split(':');
+    const iv = Buffer.from(parts.shift(), 'hex');
+    const encryptedText = Buffer.from(parts.join(':'), 'hex');
+    const decipher = crypto.createDecipheriv(algorithm, secretKey, iv);
+    const decrypted = Buffer.concat([decipher.update(encryptedText), decipher.final()]);
+    return decrypted.toString();
+};
+
+app.get("/user/:email", async (req, res) => {
+  try {
+    const email = req.params.email;
+    const encryptedData = fs.readFileSync('encrypted.txt', 'utf8');
+    const data = decrypt(encryptedData);
+    const users = data.split('\n').map(line => {
+      const [name, email] = line.split(',');
+      return { name: name.trim(), email: email.trim() };
+    });
+    const user = users.find(user => user.email === email);
+    if (user) {
+      res.json(user);
+    } else {
+      res.status(404).json({ message: "User not found" });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
