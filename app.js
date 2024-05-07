@@ -6,14 +6,13 @@ const cors = require("cors");
 const { Pool } = require("pg");
 const PDFDocument = require("pdfkit");
 const PDFTable = require("pdfkit-table");
-const fs = require('fs');
-const crypto = require('crypto');
+const fs = require("fs");
+const crypto = require("crypto");
 app.use(express.json());
 app.use(cors("*"));
 
-
-const algorithm = 'aes-256-cbc';
-const secretKey = 'vOVH6sdmpNWjRRIqCc7rdxs01lwHzfr3';
+const algorithm = process.env.ALGORITHM;
+const secretKey = process.env.SECRET_KEY;
 const iv = crypto.randomBytes(16);
 
 const pool = new Pool({
@@ -67,7 +66,7 @@ app.get("/products", async (req, res) => {
     p.quantity,
     p.reference,
     p.stock,
-    '' AS supplier,
+    p.supplier,
     p.totalcost,
     p.type,
     p.vat
@@ -105,7 +104,7 @@ app.get("/products/format", async (req, res) => {
     p.quantity,
     p.reference,
     p.stock,
-    '' AS supplier,
+    p.supplier,
     p.totalCost,
     p.type,
     p.vat
@@ -294,24 +293,25 @@ app.post("/pdf/provider", async (req, res) => {
   const doc = new PDFTable({ layout: "horizontal", size: "A3" });
   doc.pipe(res);
   const rows = provider.map((provider) => [
-    provider.nature,
-    provider.taxregime,
-    provider.documenttype,
-    provider.document,
-    provider.verificationdigit,
-    provider.firstname,
-    provider.othernames,
-    provider.lastname,
-    provider.secondlastname,
-    provider.businessname,
-    provider.department,
-    provider.city,
-    provider.address,
-    provider.neighborhood,
-    provider.phone,
-    provider.zone,
-    provider.email,
+    provider.nature ?? "",
+    provider.taxregime ?? "",
+    provider.documenttype ?? "",
+    provider.document ?? "",
+    provider.verificationdigit ?? "",
+    provider.firstname ?? "",
+    provider.othernames ?? "",
+    provider.lastname ?? "",
+    provider.secondlastname ?? "",
+    provider.businessname ?? "",
+    provider.department ?? "",
+    provider.city ?? "",
+    provider.address ?? "",
+    provider.neighborhood ?? "",
+    provider.phone ?? "",
+    provider.zone ?? "",
+    provider.email ?? "",
   ]);
+
   const table = {
     title: "Proveedores",
     subtitle: "Información de proveedores",
@@ -344,53 +344,79 @@ app.post("/pdf/products", async (req, res) => {
   try {
     const products = req.body;
 
-    const rows = products.map((product) => [
-      product.productid,
-      product.classification,
-      product.costWithVAT,
-      product.costWithoutVAT,
-      product.description,
-      product.homePrice,
-      product.photos,
-      product.productName,
-      product.quantity,
-      product.reference,
-      product.stock,
-      product.supplier,
-      product.totalCost,
-      product.type,
-      product.vat,
-    ]);
-
     res.status(200).set({
       "Content-Type": "application/pdf",
       "Content-Disposition": 'attachment; filename="products.pdf"',
     });
 
-    const doc = new PDFTable({ layout: "landscape" });
+    const doc = new PDFTable({ layout: "horizontal", size: "A3" });
     doc.pipe(res);
+
+    const rows = await Promise.all(
+      products.map(async (product) => {
+        const client = await pool.connect();
+        const providerResult = await client.query(
+          "SELECT businessname FROM provider WHERE id = $1",
+          [product.supplier]
+        );
+        const businessname = providerResult.rows[0]?.businessname || "Unknown";
+        client.release();
+
+        return [
+          product.productid,
+          product.reference,
+          product.productname,
+          product.classification,
+          businessname,
+          product.quantity,
+          product.type,
+          product.costwithvat.toLocaleString("es-CO", {
+            style: "currency",
+            currency: "COP",
+            minimumFractionDigits: 0,
+          }),
+          (product.vat ? parseFloat(product.vat).toFixed(2) : 0) + "%", // convert vat to percentage
+          product.costwithoutvat.toLocaleString("es-CO", {
+            style: "currency",
+            currency: "COP",
+            minimumFractionDigits: 0,
+          }),
+          product.totalcost.toLocaleString("es-CO", {
+            style: "currency",
+            currency: "COP",
+            minimumFractionDigits: 0,
+          }),
+          product.homeprice.value.toLocaleString("es-CO", {
+            style: "currency",
+            currency: "COP",
+            minimumFractionDigits: 0,
+          }),
+          product.stock,
+        ];
+      })
+    );
+
+    const validRows = rows.filter((row) => (row != null ? row : ""));
 
     const table = {
       title: "Productos",
       subtitle: "Información de productos",
       headers: [
         "ID",
-        "Clasificación",
-        "Costo con IVA",
-        "Costo sin IVA",
-        "Descripción",
-        "Precio de Venta",
-        "Fotos",
-        "Nombre",
-        "Cantidad",
         "Referencia",
-        "Stock",
+        "Nombre",
+        "Clasificación",
         "Proveedor",
-        "Costo Total",
+        "Cantidad",
         "Tipo",
+        "Costo con IVA",
         "IVA",
+        "Costo sin IVA",
+        "Costo Total",
+        "Precio de Venta",
+        "Stock",
       ],
-      rows: rows,
+      rows: validRows,
     };
 
     doc.table(table);
@@ -570,24 +596,27 @@ app.get("/api/products/details", async (req, res) => {
 });
 
 const decrypt = (hash) => {
-    const parts = hash.split(':');
-    const iv = Buffer.from(parts.shift(), 'hex');
-    const encryptedText = Buffer.from(parts.join(':'), 'hex');
-    const decipher = crypto.createDecipheriv(algorithm, secretKey, iv);
-    const decrypted = Buffer.concat([decipher.update(encryptedText), decipher.final()]);
-    return decrypted.toString();
+  const parts = hash.split(":");
+  const iv = Buffer.from(parts.shift(), "hex");
+  const encryptedText = Buffer.from(parts.join(":"), "hex");
+  const decipher = crypto.createDecipheriv(algorithm, secretKey, iv);
+  const decrypted = Buffer.concat([
+    decipher.update(encryptedText),
+    decipher.final(),
+  ]);
+  return decrypted.toString();
 };
 
 app.get("/user/:email", async (req, res) => {
   try {
     const email = req.params.email;
-    const encryptedData = fs.readFileSync('encrypted.txt', 'utf8');
+    const encryptedData = fs.readFileSync("encrypted.txt", "utf8");
     const data = decrypt(encryptedData);
-    const users = data.split('\n').map(line => {
-      const [name, email] = line.split(',');
+    const users = data.split("\n").map((line) => {
+      const [name, email] = line.split(",");
       return { name: name.trim(), email: email.trim() };
     });
-    const user = users.find(user => user.email === email);
+    const user = users.find((user) => user.email === email);
     if (user) {
       res.json(user);
     } else {
@@ -598,6 +627,52 @@ app.get("/user/:email", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+app.post("/products", async (req, res) => { 
+  const { classification, costwithvat, costwithoutvat, description, homepricevalue,homepriceutilitypercentage, homepriceutilityvalue, productname, quantity, reference, stock, supplier, totalcost, type, vat, photos } = req.body;
+  try {
+    console.log(req.body);
+    const client = await pool.connect();
+    const resultProduct = await client.query(
+      "INSERT INTO product (classification, costwithvat, costwithoutvat, description, homepricevalue, homepriceutilitypercentage, homepriceutilityvalue, productname, quantity, reference, stock, supplier, totalcost, type, vat) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id",
+      [
+        classification,
+        costwithvat,
+        costwithoutvat,
+        description,
+        homepricevalue,
+        homepriceutilitypercentage,
+        homepriceutilityvalue,
+        productname,
+        quantity,
+        reference,
+        stock,
+        supplier,
+        totalcost,
+        type,
+        vat,
+      ]
+    );
+
+    const productId = resultProduct.rows[0].id;
+
+    // Insertar fotos asociadas al producto
+    if (photos && photos.length > 0) {
+      for (const photo of photos) {
+        await client.query(
+          "INSERT INTO photoproduct (productoid, color, url) VALUES ($1, $2, $3)",
+          [productId, photo.color, photo.url]
+        );
+      }
+    }
+
+    res.status(201).json({ message: "Product created successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
