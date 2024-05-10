@@ -673,6 +673,82 @@ app.post("/products", async (req, res) => {
   }
 });
 
+app.put("/products/:id", async (req, res) => {
+  const id = req.params.id;
+  const { classification, costwithvat, costwithoutvat, description, homepricevalue, homepriceutilitypercentage, homepriceutilityvalue, productname, quantity, reference, stock, supplier, totalcost, type, vat, photos } = req.body;
+  try {
+    const client = await pool.connect();
+    const result = await client.query(
+      "UPDATE product SET classification = $1, costwithvat = $2, costwithoutvat = $3, description = $4, homepricevalue = $5, homepriceutilitypercentage = $6, homepriceutilityvalue = $7, productname = $8, quantity = $9, reference = $10, stock = $11, supplier = $12, totalcost = $13, type = $14, vat = $15 WHERE id = $16 RETURNING *",
+      [
+        classification,
+        costwithvat,
+        costwithoutvat,
+        description,
+        homepricevalue,
+        homepriceutilitypercentage,
+        homepriceutilityvalue,
+        productname,
+        quantity,
+        reference,
+        stock,
+        supplier,
+        totalcost,
+        type,
+        vat,
+        id,
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ message: "Product not found" });
+    } else {
+      // Delete all photos
+      await client.query("DELETE FROM photoproduct WHERE productoid = $1", [id]);
+
+      // Insert new photos
+      if (photos && photos.length > 0) {
+        for (const photo of photos) {
+          await client.query(
+            "INSERT INTO photoproduct (productoid, color, url) VALUES ($1, $2, $3)",
+            [id, photo.color, photo.url]
+          );
+        }
+      }
+
+      res.json(result.rows[0]);
+    }
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+app.delete("/products/:id", async (req, res) => {
+  const id = req.params.id;
+  try {
+    const client = await pool.connect();
+    
+    // Delete related photos
+    await client.query("DELETE FROM photoproduct WHERE productoid = $1", [id]);
+
+    // Delete the product
+    const result = await client.query("DELETE FROM product WHERE id = $1", [id]);
+    
+    if (result.rowCount === 0) {
+      res.status(404).json({ message: "Product not found" });
+    } else {
+      res.status(204).json();
+    }
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
