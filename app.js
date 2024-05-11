@@ -750,11 +750,11 @@ app.delete("/products/:id", async (req, res) => {
 });
 
 app.post("/reports", async (req, res) => {
-  const { dateinitial, datefinal, valuestore, valuemary, valuecar } = req.body;
+  const { dateinitial, datefinal, valuestore, valuemary, valuecars } = req.body;
 
   try {
     const client = await pool.connect();
-    const result = await client.query("INSERT INTO salesrecord (dateinit, datefinal, storevalue, maryvalue, carvalue) VALUES ($1, $2, $3, $4, $5) RETURNING *", [dateinitial, datefinal, valuestore, valuemary, valuecar]);
+    const result = await client.query("INSERT INTO salesrecord (dateinit, datefinal, storevalue, maryvalue, carvalue) VALUES ($1, $2, $3, $4, $5) RETURNING *", [dateinitial, datefinal, valuestore, valuemary, valuecars]);
     res.status(201).json(result.rows[0]);
     client.release();
   } catch (error) {
@@ -762,6 +762,18 @@ app.post("/reports", async (req, res) => {
     res.status(500).json({ message: "Server error" });    
   }
 });
+
+app.get("/reports", async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query("SELECT * FROM salesrecord");
+    res.json(result.rows);
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+} );
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
