@@ -749,6 +749,19 @@ app.delete("/products/:id", async (req, res) => {
   }
 });
 
+app.post("/reports", async (req, res) => {
+  const { dateinit, datefinal, valuestore, valuemary, valuecar } = req.body;
+
+  try {
+    const client = await pool.connect();
+    const result = await client.query("INSERT INTO salesrecord (dateinit, datefinal, storevalue, maryvalue, carvalue) VALUES ($1, $2, $3, $4, $5) RETURNING *", [dateinit, datefinal, valuestore, valuemary, valuecar]);
+    res.status(201).json(result.rows[0]);
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });    
+  }
+});
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
