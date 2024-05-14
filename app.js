@@ -8,6 +8,7 @@ const PDFDocument = require("pdfkit");
 const PDFTable = require("pdfkit-table");
 const fs = require("fs");
 const crypto = require("crypto");
+const { title } = require("process");
 app.use(express.json());
 app.use(cors("*"));
 
@@ -776,17 +777,62 @@ app.get("/reports", async (req, res) => {
 } );
 
 app.post("/spent", async (req, res) => {
-  const { date, value, description } = req.body;
+  const { date, amount, description } = req.body[0];
 
+  // Check if date, value, or description is null
+  if (!date || !amount || !description) {
+    return res.status(400).json({ message: "date, value, and description are required" });
+  }
+
+  console.log(req.body);
   try {
     const client = await pool.connect();
-    const result = await client.query("INSERT INTO spent (date, value, description) VALUES ($1, $2, $3) RETURNING *", [date, value, description]);
+    const result = await client.query("INSERT INTO spent (date, value, description) VALUES ($1, $2, $3) RETURNING *", [date, amount, description]);
     res.status(201).json(result.rows[0]);
     client.release();
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });    
   }
+});
+
+app.get("/spent", async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query("SELECT * FROM spent");
+    res.json(result.rows);
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+} );
+
+app.post("/pdf/spent", async (req, res) => {
+  const spent = req.body;
+
+  res.status(200).set({
+    "Content-Type": "application/pdf",
+    "Content-Disposition": 'attachment; filename="spent.pdf"',
+  });
+  const doc = new PDFTable({ layout: "portrait" }); // Set layout to landscape
+  doc.pipe(res); // Pipe the PDF output to the response
+
+  // List
+  const listItems = spent.map(
+    (spent) =>
+      `Fecha: ${spent.date}\n` +
+      `Valor: ${spent.value}\n` +
+      `Descripción: ${spent.description}\n\n`
+  );
+  doc.table({
+    title: "Gastos",
+    subtitle: "Información de gastos",
+    headers: ["Fecha", "Valor", "Descripción"],
+    rows: spent.map((spent) => [spent.date, spent.value, spent.description]),
+  });
+  
+  doc.end();
 });
 
 app.listen(port, () => {
