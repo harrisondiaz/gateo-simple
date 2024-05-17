@@ -11,6 +11,7 @@ const crypto = require("crypto");
 app.use(express.json());
 app.use(cors("*"));
 
+
 const algorithm = process.env.ALGORITHM;
 const secretKey = process.env.SECRET_KEY;
 const iv = crypto.randomBytes(16);
@@ -507,6 +508,39 @@ app.delete("/providers/:id", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.post("/api/client", async (req, res) => { 
+  const { name, email, whatsapp } = req.body;
+  try {
+    const client = await pool.connect();
+    const result = await client.query(
+      "INSERT INTO client (name, email, whatsapp) VALUES ($1, $2, $3) RETURNING *",
+      [name, email, whatsapp]
+    );
+    res.status(201).json(result.rows[0]);
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.delete("/api/client/:id", async (req, res) => {
+  const id = req.params.id;
+  try {
+    const client = await pool.connect();
+    const result = await client.query("DELETE FROM client WHERE id = $1", [id]);
+    client.release();
+    if (result.rowCount === 0) {
+      return res.status(404).send({ message: "Client not found" });
+    } else {
+      return res.status(204).send();
+    }
+  } catch (error) {
+    console.error(error);
+    return res.status(500).send({ message: "Server error" });
   }
 });
 
@@ -1085,6 +1119,20 @@ app.get("/spent/:dateinitial/:datefinal", async (req, res) => {
     const result = await client.query(
       "SELECT * FROM spent WHERE date >= $1 AND date <= $2",
       [dateinitial, datefinal]
+    );
+    res.json(result.rows);
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.get("/product/lessstock", async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query(
+      "SELECT product.id, product.productname, product.stock, photoproduct.url FROM product LEFT JOIN photoproduct ON product.id = photoproduct.productoid WHERE product.stock < 3 ORDER BY product.stock ASC LIMIT 3"
     );
     res.json(result.rows);
     client.release();
