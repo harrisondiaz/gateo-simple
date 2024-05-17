@@ -8,7 +8,6 @@ const PDFDocument = require("pdfkit");
 const PDFTable = require("pdfkit-table");
 const fs = require("fs");
 const crypto = require("crypto");
-const { title } = require("process");
 app.use(express.json());
 app.use(cors("*"));
 
@@ -629,8 +628,25 @@ app.get("/user/:email", async (req, res) => {
   }
 });
 
-app.post("/products", async (req, res) => { 
-  const { classification, costwithvat, costwithoutvat, description, homepricevalue,homepriceutilitypercentage, homepriceutilityvalue, productname, quantity, reference, stock, supplier, totalcost, type, vat, photos } = req.body;
+app.post("/products", async (req, res) => {
+  const {
+    classification,
+    costwithvat,
+    costwithoutvat,
+    description,
+    homepricevalue,
+    homepriceutilitypercentage,
+    homepriceutilityvalue,
+    productname,
+    quantity,
+    reference,
+    stock,
+    supplier,
+    totalcost,
+    type,
+    vat,
+    photos,
+  } = req.body;
   try {
     console.log(req.body);
     const client = await pool.connect();
@@ -676,7 +692,24 @@ app.post("/products", async (req, res) => {
 
 app.put("/products/:id", async (req, res) => {
   const id = req.params.id;
-  const { classification, costwithvat, costwithoutvat, description, homepricevalue, homepriceutilitypercentage, homepriceutilityvalue, productname, quantity, reference, stock, supplier, totalcost, type, vat, photos } = req.body;
+  const {
+    classification,
+    costwithvat,
+    costwithoutvat,
+    description,
+    homepricevalue,
+    homepriceutilitypercentage,
+    homepriceutilityvalue,
+    productname,
+    quantity,
+    reference,
+    stock,
+    supplier,
+    totalcost,
+    type,
+    vat,
+    photos,
+  } = req.body;
   try {
     const client = await pool.connect();
     const result = await client.query(
@@ -705,7 +738,9 @@ app.put("/products/:id", async (req, res) => {
       res.status(404).json({ message: "Product not found" });
     } else {
       // Delete all photos
-      await client.query("DELETE FROM photoproduct WHERE productoid = $1", [id]);
+      await client.query("DELETE FROM photoproduct WHERE productoid = $1", [
+        id,
+      ]);
 
       // Insert new photos
       if (photos && photos.length > 0) {
@@ -726,18 +761,19 @@ app.put("/products/:id", async (req, res) => {
   }
 });
 
-
 app.delete("/products/:id", async (req, res) => {
   const id = req.params.id;
   try {
     const client = await pool.connect();
-    
+
     // Delete related photos
     await client.query("DELETE FROM photoproduct WHERE productoid = $1", [id]);
 
     // Delete the product
-    const result = await client.query("DELETE FROM product WHERE id = $1", [id]);
-    
+    const result = await client.query("DELETE FROM product WHERE id = $1", [
+      id,
+    ]);
+
     if (result.rowCount === 0) {
       res.status(404).json({ message: "Product not found" });
     } else {
@@ -755,12 +791,15 @@ app.post("/reports", async (req, res) => {
 
   try {
     const client = await pool.connect();
-    const result = await client.query("INSERT INTO salesrecord (dateinit, datefinal, storevalue, maryvalue, carvalue) VALUES ($1, $2, $3, $4, $5) RETURNING *", [dateinitial, datefinal, valuestore, valuemary, valuecars]);
+    const result = await client.query(
+      "INSERT INTO salesrecord (dateinit, datefinal, storevalue, maryvalue, carvalue) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [dateinitial, datefinal, valuestore, valuemary, valuecars]
+    );
     res.status(201).json(result.rows[0]);
     client.release();
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Server error" });    
+    res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -774,25 +813,30 @@ app.get("/reports", async (req, res) => {
     console.error(error);
     res.status(500).json({ message: "Server error" });
   }
-} );
+});
 
 app.post("/spent", async (req, res) => {
   const { date, amount, description } = req.body[0];
 
   // Check if date, value, or description is null
   if (!date || !amount || !description) {
-    return res.status(400).json({ message: "date, value, and description are required" });
+    return res
+      .status(400)
+      .json({ message: "date, value, and description are required" });
   }
 
   console.log(req.body);
   try {
     const client = await pool.connect();
-    const result = await client.query("INSERT INTO spent (date, value, description) VALUES ($1, $2, $3) RETURNING *", [date, amount, description]);
+    const result = await client.query(
+      "INSERT INTO spent (date, value, description) VALUES ($1, $2, $3) RETURNING *",
+      [date, amount, description]
+    );
     res.status(201).json(result.rows[0]);
     client.release();
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Server error" });    
+    res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -806,33 +850,248 @@ app.get("/spent", async (req, res) => {
     console.error(error);
     res.status(500).json({ message: "Server error" });
   }
+});
+
+app.get("/pdf/spents", async (req, res) => {
+  try {
+    res.status(200).set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": 'attachment; filename="spents.pdf"',
+    });
+
+    const doc = new PDFTable({ margin: 30, size: "A4" });
+    doc.pipe(res);
+    const client = await pool.connect();
+    const result = await client.query("SELECT * FROM spent");
+    const rows = await Promise.all(
+      result.rows.map(async (spent) => [
+        new Date(spent.date).toLocaleDateString("es-ES", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        spent.value.toLocaleString("es-CO", {
+          style: "currency",
+          currency: "COP",
+          minimumFractionDigits: 0,
+        }),
+        spent.description,
+      ])
+    );
+
+    const validRows = rows.filter((row) => (row != null ? row : ""));
+    const table = {
+      title: "Gastos",
+      subtitle: "Información de gastos",
+      headers: ["Fecha", "Valor", "Descripción"],
+      rows: validRows,
+    };
+
+    doc.table(table);
+    doc.end();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.get("/pdf/spents/lastyear", async (req, res) => {
+ try {
+   const client = await pool.connect();
+    const result = await client.query("SELECT * FROM spent WHERE date >= NOW() - INTERVAL '1 year'");
+    res.status(200).set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": 'attachment; filename="spents.pdf"',
+    });
+    
+    const doc = new PDFTable({ margin: 30, size: "A4" });
+    doc.pipe(res);
+    const rows = await Promise.all(
+      result.rows.map(async (spent) => [
+        new Date(spent.date).toLocaleDateString("es-ES", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        spent.value.toLocaleString("es-CO", {
+          style: "currency",
+          currency: "COP",
+          minimumFractionDigits: 0,
+        }),
+        spent.description,
+      ])
+    );
+
+    const validRows = rows.filter((row) => (row != null ? row : ""));
+    const table = {
+      title: "Gastos",
+      subtitle: "Información de gastos en el último año",
+      headers: ["Fecha", "Valor", "Descripción"],
+      rows: validRows,
+    };
+
+    doc.table(table);
+    doc.end();
+
+ } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+ }
+  
+});
+
+app.get("/pdf/spents/lastmonth", async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query("SELECT * FROM spent WHERE date >= NOW() - INTERVAL '1 month'");
+    res.status(200).set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": 'attachment; filename="spents.pdf"',
+    });
+    
+    const doc = new PDFTable({ margin: 30, size: "A4" });
+    doc.pipe(res);
+    const rows = await Promise.all(
+      result.rows.map(async (spent) => [
+        new Date(spent.date).toLocaleDateString("es-ES", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        spent.value.toLocaleString("es-CO", {
+          style: "currency",
+          currency: "COP",
+          minimumFractionDigits: 0,
+        }),
+        spent.description,
+      ])
+    );
+
+    const validRows = rows.filter((row) => (row != null ? row : ""));
+    const table = {
+      title: "Gastos",
+      subtitle: "Información de gastos en el último mes",
+      headers: ["Fecha", "Valor", "Descripción"],
+      rows: validRows,
+    };
+
+    doc.table(table);
+    doc.end();
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.get("/pdf/spents/lastweek", async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query("SELECT * FROM spent WHERE date >= NOW() - INTERVAL '1 week'");
+    res.status(200).set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": 'attachment; filename="spents.pdf"',
+    });
+    
+    const doc = new PDFTable({ margin: 30, size: "A4" });
+    doc.pipe(res);
+    const rows = await Promise.all(
+      result.rows.map(async (spent) => [
+        new Date(spent.date).toLocaleDateString("es-ES", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        spent.value.toLocaleString("es-CO", {
+          style: "currency",
+          currency: "COP",
+          minimumFractionDigits: 0,
+        }),
+        spent.description,
+      ])
+    );
+
+    const validRows = rows.filter((row) => (row != null ? row : ""));
+    const table = {
+      title: "Gastos",
+      subtitle: "Información de gastos en la última semana",
+      headers: ["Fecha", "Valor", "Descripción"],
+      rows: validRows,
+    };
+
+    doc.table(table);
+    doc.end();
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.get("/pdf/spents/filters/:dateinitial/:datefinal", async (req, res) => {
+   
+  const dateinitial = req.params.dateinitial;
+  const datefinal = req.params.datefinal;
+  try {
+    res.status(200).set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": 'attachment; filename="spents.pdf"',
+    });
+
+    const doc = new PDFTable({ margin: 30, size: "A4" });
+    doc.pipe(res);
+    const client = await pool.connect();
+    const result = await client.query(
+      "SELECT * FROM spent WHERE date >= $1 AND date <= $2",
+      [dateinitial, datefinal]
+    );
+    const rows = await Promise.all(
+      result.rows.map(async (spent) => [
+        new Date(spent.date).toLocaleDateString("es-ES", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        spent.value.toLocaleString("es-CO", {
+          style: "currency",
+          currency: "COP",
+          minimumFractionDigits: 0,
+        }),
+        spent.description,
+      ])
+    );
+
+    const validRows = rows.filter((row) => (row != null ? row : ""));
+    const table = {
+      title: "Gastos",
+      subtitle: "Información de gastos",
+      headers: ["Fecha", "Valor", "Descripción"],
+      rows: validRows,
+    };
+
+    doc.table(table);
+    doc.end();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
 } );
 
-app.post("/pdf/spent", async (req, res) => {
-  const spent = req.body;
-
-  res.status(200).set({
-    "Content-Type": "application/pdf",
-    "Content-Disposition": 'attachment; filename="spent.pdf"',
-  });
-  const doc = new PDFTable({ layout: "portrait" }); // Set layout to landscape
-  doc.pipe(res); // Pipe the PDF output to the response
-
-  // List
-  const listItems = spent.map(
-    (spent) =>
-      `Fecha: ${spent.date}\n` +
-      `Valor: ${spent.value}\n` +
-      `Descripción: ${spent.description}\n\n`
-  );
-  doc.table({
-    title: "Gastos",
-    subtitle: "Información de gastos",
-    headers: ["Fecha", "Valor", "Descripción"],
-    rows: spent.map((spent) => [spent.date, spent.value, spent.description]),
-  });
-  
-  doc.end();
+app.get("/spent/:dateinitial/:datefinal", async (req, res) => {
+  const dateinitial = req.params.dateinitial;
+  const datefinal = req.params.datefinal;
+  try {
+    const client = await pool.connect();
+    const result = await client.query(
+      "SELECT * FROM spent WHERE date >= $1 AND date <= $2",
+      [dateinitial, datefinal]
+    );
+    res.json(result.rows);
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
 app.listen(port, () => {
