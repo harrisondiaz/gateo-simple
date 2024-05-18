@@ -849,6 +849,87 @@ app.get("/reports", async (req, res) => {
   }
 });
 
+app.get("/reports/:initialdate/:finaldate", async (req, res) => {
+  const initialdate = req.params.initialdate;
+  const finaldate = req.params.finaldate;
+  try {
+    const client = await pool.connect();
+    const result = await client.query(
+      "SELECT * FROM salesrecord WHERE dateinit >= $1 AND datefinal <= $2",
+      [initialdate, finaldate]
+    );
+    res.json(result.rows);
+    client.release();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+app.get("/pdf/reports/:initialdate/:finaldate", async (req, res) => {
+  const dateinitial = req.params.initialdate;
+  const datefinal = req.params.finaldate;
+  try {
+    res.status(200).set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": 'attachment; filename="reports.pdf"',
+    });
+     
+    const doc = new PDFTable({ margin: 30, size: "A4" });
+    doc.pipe(res);
+    const client = await pool.connect();
+    const result = await client.query(
+      "SELECT * FROM salesrecord WHERE dateinit >= $1 AND datefinal <= $2",
+      [dateinitial, datefinal]
+    );
+    const rows = await Promise.all(
+      result.rows.map(async (record) => [
+        new Date(record.dateinit).toLocaleDateString("es-ES", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        new Date(record.datefinal).toLocaleDateString("es-ES", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        record.storevalue.toLocaleString("es-CO", {
+          style: "currency",
+          currency: "COP",
+          minimumFractionDigits: 0,
+        }),
+        record.maryvalue.toLocaleString("es-CO", {
+          style: "currency",
+          currency: "COP",
+          minimumFractionDigits: 0,
+        }),
+        record.carvalue.toLocaleString("es-CO", {
+          style: "currency",
+          currency: "COP",
+          minimumFractionDigits: 0,
+        }),
+      ])
+    );
+
+    const validRows = rows.filter((row) => (row != null ? row : ""));
+    const table = {
+      title: "Reportes",
+      subtitle: "Información de reportes",
+      headers: ["Fecha Inicial", "Fecha Final", "Valor Tienda", "Valor Mary", "Valor Car"],
+      rows: validRows,
+    };
+
+    doc.table(table);
+    doc.end();
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 app.post("/spent", async (req, res) => {
   const { date, amount, description } = req.body[0];
 
